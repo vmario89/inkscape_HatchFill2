@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # coding=utf-8
-# HatchFill2.py
+# HatchFill.py
 #
 # Generate hatch fills for the closed paths (polygons) in the currently
 # selected document elements.  If no elements are selected, then all the
@@ -98,27 +98,10 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 import math
-
 from lxml import etree
-
-try:
-    from plot_utils_import import from_dependency_import  # plotink
-
-    inkex = from_dependency_import("ink_extensions.inkex")
-    simplepath = from_dependency_import("ink_extensions.simplepath")
-    simpletransform = from_dependency_import("ink_extensions.simpletransform")
-    simplestyle = from_dependency_import("ink_extensions.simplestyle")
-    cubicsuperpath = from_dependency_import("ink_extensions.cubicsuperpath")
-    cspsubdiv = from_dependency_import("ink_extensions.cspsubdiv")
-    bezmisc = from_dependency_import("ink_extensions.bezmisc")
-except:
-    import inkex
-    import simplepath
-    import simpletransform
-    import simplestyle
-    import cubicsuperpath
-    import cspsubdiv
-    import bezmisc
+import inkex
+from inkex import Transform
+from inkex.paths import Path, CubicSuperPath
 
 N_PAGE_WIDTH = 3200
 N_PAGE_HEIGHT = 800
@@ -605,7 +588,6 @@ def subdivideCubicPath(sp, flat, i=1):
     is approximately a straight line within a given tolerance
     (the "smoothness" defined by [flat]).
 
-    This is a modified version of cspsubdiv.cspsubdiv() rewritten
     to avoid recurrence.
     """
 
@@ -647,7 +629,7 @@ def distanceSquared(p1, p2):
     return dx * dx + dy * dy
 
 
-class HatchFill2(inkex.Effect):
+class HatchFill(inkex.Effect):
     def __init__(self):
 
         inkex.Effect.__init__(self)
@@ -666,78 +648,15 @@ class HatchFill2(inkex.Effect):
         self.docHeight = float(N_PAGE_HEIGHT)
         self.docTransform = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
 
-        self.arg_parser.add_argument(
-            "--holdBackSteps",
-            action="store",
-            type=float,
-            dest="holdBackSteps",
-            default=3.0,
-            help="How far hatch strokes stay from boundary (steps)",
-        )
-        self.arg_parser.add_argument(
-            "--hatchScope",
-            action="store",
-            type=float,
-            dest="hatchScope",
-            default=3.0,
-            help="Radius searched for segments to join (units of hatch width)",
-        )
-        self.arg_parser.add_argument(
-            "--holdBackHatchFromEdges",
-            action="store",
-            dest="holdBackHatchFromEdges",
-            type=inkex.Boolean,
-            default=True,
-            help="Stay away from edges, so no need for inset",
-        )
-        self.arg_parser.add_argument(
-            "--reducePenLifts",
-            action="store",
-            dest="reducePenLifts",
-            type=inkex.Boolean,
-            default=True,
-            help="Reduce plotting time by joining some hatches",
-        )
-        self.arg_parser.add_argument(
-            "--crossHatch",
-            action="store",
-            dest="crossHatch",
-            type=inkex.Boolean,
-            default=False,
-            help="Generate a cross hatch pattern",
-        )
-        self.arg_parser.add_argument(
-            "--hatchAngle",
-            action="store",
-            type=float,
-            dest="hatchAngle",
-            default=90.0,
-            help="Angle of inclination for hatch lines",
-        )
-        self.arg_parser.add_argument(
-            "--hatchSpacing",
-            action="store",
-            type=float,
-            dest="hatchSpacing",
-            default=10.0,
-            help="Spacing between hatch lines",
-        )
-        self.arg_parser.add_argument(
-            "--tolerance",
-            action="store",
-            type=float,
-            dest="tolerance",
-            default=20.0,
-            help="Allowed deviation from original paths",
-        )
-        self.arg_parser.add_argument(
-            "--tab",  # NOTE: value is not used.
-            action="store",
-            type=str,
-            dest="tab",
-            default="splash",
-            help="The active tab when Apply was pressed",
-        )
+        self.arg_parser.add_argument( "--holdBackSteps", type=float, default=3.0, help="How far hatch strokes stay from boundary (steps)", )
+        self.arg_parser.add_argument( "--hatchScope", type=float, default=3.0, help="Radius searched for segments to join (units of hatch width)", )
+        self.arg_parser.add_argument( "--holdBackHatchFromEdges", type=inkex.Boolean, default=True, help="Stay away from edges, so no need for inset", )
+        self.arg_parser.add_argument( "--reducePenLifts", type=inkex.Boolean, default=True, help="Reduce plotting time by joining some hatches", )
+        self.arg_parser.add_argument( "--crossHatch", type=inkex.Boolean, default=False, help="Generate a cross hatch pattern", )
+        self.arg_parser.add_argument( "--hatchAngle", type=float, default=90.0, help="Angle of inclination for hatch lines", )
+        self.arg_parser.add_argument( "--hatchSpacing", type=float, default=10.0, help="Spacing between hatch lines", )
+        self.arg_parser.add_argument( "--tolerance", type=float, default=20.0, help="Allowed deviation from original paths", )
+        self.arg_parser.add_argument( "--tab", default="splash")
 
     def getDocProps(self):
 
@@ -768,8 +687,8 @@ class HatchFill2(inkex.Effect):
                 if vinfo[2] != 0 and vinfo[3] != 0:
                     sx = self.docWidth / float(vinfo[2])
                     sy = self.docHeight / float(vinfo[3])
-                    # self.docTransform = simpletransform.parseTransform('scale({0:f},{1:f})'.format(sx, sy))
-                    self.docTransform = simpletransform.Transform(
+                    # self.docTransform = Transform('scale({0:f},{1:f})'.format(sx, sy))
+                    self.docTransform = Transform(
                         f"scale({sx}, {sy})"
                     ).matrix
 
@@ -796,13 +715,13 @@ class HatchFill2(inkex.Effect):
             return
 
         # Get a cubic super duper path
-        p = inkex.paths.CubicSuperPath(sp)
+        p = CubicSuperPath(sp)
         if not p or len(p) == 0:
             return
 
         # Apply any transformation
         if transform is not None:
-            simpletransform.Path(p).transform(transform)
+            Path(p).transform(transform)
 
         # Now traverse the simplified path
         subpaths = []
@@ -905,11 +824,7 @@ class HatchFill2(inkex.Effect):
                 pass
 
             # first apply the current matrix transform to this node's transform
-            mat_new = simpletransform.Transform(
-                mat_current
-            ) * simpletransform.Transform(
-                simpletransform.Transform(node.get("transform")).matrix
-            )
+            mat_new = Transform(mat_current) * Transform(Transform(node.get("transform")).matrix)
 
             if node.tag in [inkex.addNS("g", "svg"), "g"]:
                 self.recursivelyTraverseSvg(node, mat_new, parent_visibility=v)
@@ -939,12 +854,7 @@ class HatchFill2(inkex.Effect):
                     y = float(node.get("y", "0"))
                     # Note: the transform has already been applied
                     if x != 0 or y != 0:
-                        mat_new2 = simpletransform.composeTransform(
-                            mat_new,
-                            simpletransform.parseTransform(
-                                "translate({0:f},{1:f})".format(x, y)
-                            ),
-                        )
+                        mat_new2 = Transform(mat_new) * Transform(Transform("translate({0:f},{1:f})".format(x, y)))
                     else:
                         mat_new2 = mat_new
                     v = node.get("visibility", v)
@@ -1007,7 +917,7 @@ class HatchFill2(inkex.Effect):
                     ["l", [-w, 0]],
                     ["Z", []],
                 ]
-                ret = simplepath.Path(a)
+                ret = Path(a)
                 self.addPathVertices(ret, node, mat_new)
                 # We now have a path we want to apply a (cross)hatch to
                 # Apply appropriate functions
@@ -1054,7 +964,7 @@ class HatchFill2(inkex.Effect):
                     ["M ", [x1, y1]],
                     [" L ", [x2, y2]],
                 ]
-                self.addPathVertices(simplepath.formatPath(a), node, mat_new)
+                self.addPathVertices(Path(a), node, mat_new)
                 # We now have a path we want to apply a (cross)hatch to
                 # Apply appropriate functions
                 b_have_grid = self.makeHatchGrid(
@@ -1478,8 +1388,8 @@ class HatchFill2(inkex.Effect):
                 # resulting line segment.
                 pt1 = [0, 0]
                 pt2 = [s, s]
-                simpletransform.Transform(transform).apply_to_point(pt1)
-                simpletransform.Transform(transform).apply_to_point(pt2)
+                Transform(transform).apply_to_point(pt1)
+                Transform(transform).apply_to_point(pt2)
                 dx = pt2[0] - pt1[0]
                 dy = pt2[1] - pt1[1]
                 stroke_width = math.sqrt(dx * dx + dy * dy)
@@ -1516,8 +1426,8 @@ class HatchFill2(inkex.Effect):
                     # after the fact (i.e., what's this transform here for?).
                     # So, we compute the inverse transform and apply it here.
                     if transform is not None:
-                        simpletransform.Transform(transform).apply_to_point(pt1)
-                        simpletransform.Transform(transform).apply_to_point(pt2)
+                        Transform(transform).apply_to_point(pt1)
+                        Transform(transform).apply_to_point(pt2)
                     # Now generate the path data for the <path>
                     if direction:
                         # Go this direction
@@ -1560,8 +1470,8 @@ class HatchFill2(inkex.Effect):
                     # after the fact (i.e., what's this transform here for?).
                     # So, we compute the inverse transform and apply it here.
                     if transform is not None:
-                        simpletransform.Transform(transform).apply_to_point(pt1)
-                        simpletransform.Transform(transform).apply_to_point(pt2)
+                        Transform(transform).apply_to_point(pt1)
+                        Transform(transform).apply_to_point(pt2)
 
                     # Now generate the path data for the <path>
                     # BUT we want to combine as many paths as possible to reduce pen lifts.
@@ -2331,12 +2241,11 @@ def inkscape_run_debug():
         fid.write("]\n")
 
         fid.write(f"import {base_name}\n")
-        fid.write("hatchfill = hatchfill2.HatchFill2()\n")
+        fid.write("hatchfill = HatchFill.HatchFill()\n")
         fid.write("hatchfill.run(args)\n")
 
 
 if __name__ == "__main__":
     # Debug script when called from Inkscape
     inkscape_run_debug()
-    e = HatchFill2()
-    e.run()
+    HatchFill().run()
